@@ -34,6 +34,8 @@ Water, rocks, lamp posts, the fire pit, and the world edge block movement.
 Near the starting path, compare coral poppies on the left, white daisies on the right, and violet flower spikes farther ahead on the right.
 Press **N** for daylight and **+** to inspect the petals and grass tufts more closely.
 The flowers are visual experiments and can be walked through.
+Look off the path for ferns and spotted mushrooms, and toward the pond for lily pads, pale pink blooms, and small ripple rings.
+Shoreline pebbles and occasional ASCII leaf strokes add texture alongside the Braille shapes.
 
 ## Development
 
@@ -56,6 +58,7 @@ A pinhole camera projects it to a 2-by-4 dot grid per terminal cell.
 A small software depth buffer handles overlapping grass and sprites before each cell is encoded as a Braille character.
 Dots in one cell share a foreground color; they are not eight independent RGB pixels.
 The ground uses colored glyphs beneath the dot layer.
+Sparse ASCII accents use the same depth ordering; a foreground dot hides the whole accent cell so scenery cannot paint over the traveler.
 Water ripples and reflected lights are visual approximations, not a fluid simulation.
 
 Inspired by [Senu's terminal animation techniques](https://github.com/MamuzaD/senu) and [Ansenjeo's ASCII development videos](https://x.com/Ansenjeo).

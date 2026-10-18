@@ -1,6 +1,6 @@
 import { RGBA, type OptimizedBuffer } from '@opentui/core';
 import { Camera, type Projection } from './camera.ts';
-import { CAMP, POSTS, SPAWN, WORLD_EDGE, clamp, flowers, grass, hash, lerp, move, noise, pathDistance, rocks, shore, type Point } from './world.ts';
+import { CAMP, POSTS, SPAWN, WORLD_EDGE, clamp, ferns, flowers, grass, hash, lerp, lilyPads, move, mushrooms, noise, pathDistance, pebbles, rocks, shore, type Point } from './world.ts';
 
 // Experience: a moonlit shore fills the terminal; the controls stay at its edge.
 // World: blue water, dense green glyphs, amber local light, a pale travelling figure.
@@ -34,6 +34,7 @@ const FLOWER_HEADS = {
   poppy: [' pp pp ', 'ppppppp', 'ppppppp', ' pdddp ', '  ddd  '],
   lavender: ['  p  ', ' ppp ', '  d  ', ' ppp ', 'ppppp', '  d  ', ' ppp ', 'ppppp', '  d  '],
 };
+const MUSHROOM = ['   ccc   ', '  cpccc  ', ' ccccpcc ', 'ccccccccc', '  ggggg  ', '   sss   ', '   sss   ', '   sss   '];
 const FLOWER_COLORS = {
   daisy: { p: 0xf2e8c7, o: 0xe8b84e, d: 0xb5a675 },
   poppy: { p: 0xee806e, o: 0xe8b84e, d: 0x9d454f },
@@ -72,6 +73,9 @@ class Dots {
   readonly bg: Int32Array;
   readonly fg: Int32Array;
   readonly glyphs: string[];
+  readonly accents: (string | undefined)[];
+  readonly accentDepth: Float32Array;
+  readonly accentColors: Int32Array;
 
   constructor(readonly cols: number, readonly rows: number) {
     this.width = cols * 2;
@@ -82,9 +86,24 @@ class Dots {
     this.bg = new Int32Array(cols * rows);
     this.fg = new Int32Array(cols * rows);
     this.glyphs = new Array(cols * rows);
+    this.accents = new Array(cols * rows);
+    this.accentDepth = new Float32Array(cols * rows);
+    this.accentColors = new Int32Array(cols * rows);
   }
 
-  clear() { this.depth.fill(Infinity); this.colors.fill(-1); }
+  clear() {
+    this.depth.fill(Infinity); this.colors.fill(-1);
+    this.accents.fill(undefined); this.accentDepth.fill(Infinity);
+  }
+
+  accent(p: Projection | null, glyph: string, color: number) {
+    if (!p) return;
+    const x = Math.floor(p.x / 2), y = Math.floor(p.y / 4);
+    if (x < 0 || y < 0 || x >= this.cols || y >= this.rows) return;
+    const i = y * this.cols + x;
+    if (p.depth > this.accentDepth[i]) return;
+    this.accents[i] = glyph; this.accentDepth[i] = p.depth; this.accentColors[i] = color;
+  }
 
   dot(p: Projection | null, color: number, reflection = false) {
     if (!p) return;
@@ -109,14 +128,20 @@ class Dots {
 
   flush(buffer: OptimizedBuffer) {
     for (let y = 0; y < this.rows; y++) for (let x = 0; x < this.cols; x++) {
-      let bits = 0, r = 0, g = 0, b = 0, count = 0;
+      let bits = 0, r = 0, g = 0, b = 0, count = 0, nearest = Infinity;
       for (let dy = 0; dy < 4; dy++) for (let dx = 0; dx < 2; dx++) {
         const color = this.colors[(y * 4 + dy) * this.width + x * 2 + dx];
         if (color < 0) continue;
+        nearest = Math.min(nearest, this.depth[(y * 4 + dy) * this.width + x * 2 + dx]);
         bits |= DOT_BITS[dy][dx];
         r += color >> 16; g += (color >> 8) & 255; b += color & 255; count++;
       }
       const i = y * this.cols + x;
+      // A whole-cell accent yields to any foreground dot, including the traveler.
+      if (this.accents[i] && this.accentDepth[i] <= nearest) {
+        buffer.setCell(x, y, this.accents[i]!, rgba(this.accentColors[i]), rgba(this.bg[i]));
+        continue;
+      }
       const color = count ? (Math.round(r / count) << 16) | (Math.round(g / count) << 8) | Math.round(b / count) : this.fg[i];
       buffer.setCell(x, y, bits ? BRAILLE[bits] : this.glyphs[i], rgba(color), rgba(this.bg[i]));
     }
@@ -250,6 +275,11 @@ export class Scene {
       const color = this.shade(base, tuft.x, height * 0.5, tuft.z, root.depth);
       const rootColor = mix(color, this.shade(0x345b40, tuft.x, 0, tuft.z, root.depth), 0.45);
       const projectedHeight = height * c.focal / root.depth;
+      // At one-cell scale, an occasional whole ASCII tuft reads as a crisp pair of leaves.
+      if (!tuft.reed && tuft.seed > 0.92 && projectedHeight >= 4 && projectedHeight < 8) {
+        d.accent(c.project(tuft.x + lean * 0.5, height * 0.45, tuft.z), 'v', color);
+        continue;
+      }
       // Distant plants keep one stalk instead of merging three blades into bright noise.
       const blades = projectedHeight < 3 ? [0] : [-1, 0, 1];
       for (const side of blades) {
@@ -309,6 +339,81 @@ export class Scene {
         const u = (sx - center + width / 2) / width;
         const ch = row[Math.min(row.length - 1, Math.floor(u * row.length))];
         if (ch !== ' ') d.dot({ x: sx, y: sy, depth }, colors[ch]);
+      }
+    }
+  }
+
+  private details() {
+    const c = this.camera, d = this.dots!, t = this.time;
+    for (const pebble of pebbles) {
+      const p = c.project(pebble.x, 0.03, pebble.z);
+      if (!p || p.depth > 48) continue;
+      const color = this.shade(mix(0x66766c, 0xa5ab89, pebble.seed), pebble.x, 0, pebble.z, p.depth);
+      d.accent(p, pebble.size * c.focal / p.depth > 0.8 ? 'o' : '.', color);
+    }
+    for (const pad of lilyPads) {
+      const root = c.project(pad.x, 0, pad.z);
+      if (!root || root.x < -20 || root.x > d.width + 20 || root.y < -20 || root.y > d.height + 20) continue;
+      const bob = 0.04 + Math.sin(t * 1.4 + pad.seed * 8) * 0.025;
+      const steps = Math.max(5, Math.ceil(pad.size * c.focal / root.depth));
+      const angle = pad.seed * Math.PI * 2;
+      for (let row = -steps; row <= steps; row++) for (let col = -steps; col <= steps; col++) {
+        const u = col / steps, v = row / steps;
+        if (u * u + v * v > 1 || u > 0 && Math.abs(v) < u * 0.22) continue;
+        const x = pad.x + (u * Math.cos(angle) - v * Math.sin(angle)) * pad.size;
+        const z = pad.z + (u * Math.sin(angle) + v * Math.cos(angle)) * pad.size;
+        if (shore(x, z) >= 0) continue;
+        const rim = u * u + v * v > 0.73;
+        const base = rim ? 0x8fa768 : mix(0x315f4d, 0x608653, (v + 1) / 2);
+        d.dot(c.project(x, bob, z), this.shade(base, x, bob, z, root.depth));
+      }
+      // A small, solid petal mark contrasts with the open dotted leaf below it.
+      if (pad.seed > 0.65) {
+        const at = c.project(pad.x, bob + 0.18, pad.z);
+        const petal = this.shade(0xe8b6c7, pad.x, bob + 0.18, pad.z, root.depth);
+        if (pad.size * c.focal / root.depth >= 2.5) d.accent(at, '*', petal);
+        else d.dot(at, petal);
+      }
+      // Broken rings follow the leaf rather than blinking randomly over the water.
+      for (let i = 0; i < 10; i++) {
+        const a = i * Math.PI / 5 + t * 0.06;
+        const radius = pad.size + 0.2 + (Math.sin(t * 1.4 + pad.seed * 8) + 1) * 0.1;
+        const x = pad.x + Math.cos(a) * radius, z = pad.z + Math.sin(a) * radius;
+        if (shore(x, z) < 0) d.dot(c.project(x, 0.01, z), this.shade(0x6a9291, x, 0, z, root.depth));
+      }
+    }
+    for (const fern of ferns) {
+      const root = c.project(fern.x, 0, fern.z);
+      if (!root || root.depth > 60 || root.x < -20 || root.x > d.width + 20 || root.y < -10 || root.y > d.height + 30) continue;
+      const sway = Math.sin(t * 1.3 + fern.x * 0.19 + fern.z * 0.25) * 0.08;
+      const ink = this.shade(0x74a477, fern.x, 0.4, fern.z, root.depth);
+      for (const side of [-1, -0.5, 0, 0.5, 1]) {
+        const at = (k: number) => c.project(fern.x + c.right.x * (side * k * fern.size + sway * k),
+          Math.sin(k * 2.3) * fern.size * (0.85 - Math.abs(side) * 0.25),
+          fern.z + c.right.z * side * k * fern.size);
+        for (let i = 1; i <= 6; i++) {
+          const k = i / 6, p = at(k);
+          d.line(at((i - 1) / 6), p, ink);
+          if (!p || i === 6) continue;
+          const width = Math.sin(k * Math.PI) * fern.size * c.focal / p.depth * 0.17;
+          for (const leaf of [-1, 1]) {
+            const tip = { ...p, x: p.x + leaf * width, y: p.y - width * 0.55, depth: p.depth - 0.01 };
+            d.line(p, tip, ink);
+            if (i === 3 && Math.abs(side) >= 0.5 && width > 1.4) {
+              d.accent({ ...tip, depth: tip.depth - 0.02 }, leaf < 0 ? String.fromCharCode(92) : '/', ink);
+            }
+          }
+        }
+      }
+    }
+    for (const mushroom of mushrooms) {
+      const { x, z, size } = mushroom;
+      const root = c.project(x, 0, z);
+      if (!root || root.depth > 65 || root.x < -12 || root.x > d.width + 12 || root.y < -8 || root.y > d.height + 20) continue;
+      const cap = mushroom.seed < 0.65 ? 0xc17a58 : 0xc1a065;
+      this.sprite(x, 0.39 * size, z, MUSHROOM, { c: cap, p: 0xe6cd9e, g: 0x846547, s: 0xc7bc91 }, 0.095 * size);
+      if (size * c.focal / root.depth > 6) {
+        d.accent(c.project(x, 0.26 * size, z), '|', this.shade(0xc7bc91, x, 0.26 * size, z, root.depth));
       }
     }
   }
@@ -375,7 +480,7 @@ export class Scene {
   paint(buffer: OptimizedBuffer, cols: number, rows: number) {
     if (!this.dots || this.dots.cols !== cols || this.dots.rows !== rows) this.dots = new Dots(cols, rows);
     this.camera = new Camera(cols, rows, this.focus, this.yaw, this.zoom);
-    this.dots.clear(); this.lights(); this.ground(); this.vegetation();
+    this.dots.clear(); this.lights(); this.ground(); this.vegetation(); this.details();
     for (const rock of rocks) this.stone(rock.x, rock.z, rock.radius, rock.seed);
     this.lamps(); this.character(); this.dots.flush(buffer);
   }

@@ -2,6 +2,7 @@ export interface Point { x: number; z: number }
 export interface Grass extends Point { height: number; lean: number; seed: number; reed: boolean }
 export type FlowerKind = 'daisy' | 'poppy' | 'lavender';
 export interface Flower extends Point { kind: FlowerKind; height: number; seed: number }
+export interface SceneryDetail extends Point { size: number; seed: number }
 export interface Rock extends Point { radius: number; seed: number }
 
 export const WORLD_EDGE = 42;
@@ -88,6 +89,46 @@ for (let z = -WORLD_EDGE; z < WORLD_EDGE; z += 0.8) {
 // Rocks are generated above; keep flower stems clear of their collision footprints.
 for (let i = flowers.length - 1; i >= 0; i--) {
   if (!walkable(flowers[i].x, flowers[i].z)) flowers.splice(i, 1);
+}
+
+// Authored landmarks stay sparse so the flower patches and path retain clear silhouettes.
+export const ferns: SceneryDetail[] = [
+  { x: -11.5, z: 5.5, size: 1.1, seed: 0.2 },
+  { x: -0.5, z: 11, size: 0.9, seed: 0.7 },
+  { x: -10.8, z: -3, size: 1, seed: 0.4 },
+  { x: -15, z: 14, size: 1.2, seed: 0.8 },
+].filter(p => walkable(p.x, p.z) && pathDistance(p.x, p.z) > 1.8);
+export const mushrooms: SceneryDetail[] = [
+  { x: -10.3, z: 7.5, size: 1, seed: 0.2 },
+  { x: -11.1, z: 8, size: 0.7, seed: 0.4 },
+  { x: -10.1, z: 8.5, size: 0.65, seed: 0.6 },
+  { x: 1.5, z: 5, size: 0.85, seed: 0.8 },
+  { x: 2.2, z: 5.5, size: 0.6, seed: 0.9 },
+].filter(p => walkable(p.x, p.z) && pathDistance(p.x, p.z) > 1.8);
+export const lilyPads: SceneryDetail[] = [
+  { x: 2.1, z: -2.5, size: 0.7, seed: 0.2 },
+  { x: 3.8, z: -3, size: 0.6, seed: 0.8 },
+  { x: 3, z: -5, size: 0.55, seed: 0.4 },
+  { x: 5.6, z: -4.1, size: 0.8, seed: 0.9 },
+  { x: 7.5, z: -1, size: 0.65, seed: 0.3 },
+  { x: 8.4, z: -3.3, size: 0.5, seed: 0.7 },
+];
+export const pebbles: SceneryDetail[] = [];
+for (let z = -WORLD_EDGE; z < WORLD_EDGE; z += 1.1) {
+  for (let x = -WORLD_EDGE; x < WORLD_EDGE; x += 1.1) {
+    const seed = hash(x + 42, z - 19);
+    const px = x + seed * 0.8, pz = z + hash(z, x) * 0.8;
+    const bank = shore(px, pz);
+    if (bank > 0.15 && bank < 0.95 && seed > 0.4 && pathDistance(px, pz) > 1.5) {
+      pebbles.push({ x: px, z: pz, size: 0.05 + seed * 0.09, seed });
+    }
+  }
+}
+
+// Leave room around low plants so their stems do not disappear into grass.
+const lowPlants = [...ferns, ...mushrooms];
+for (let i = grass.length - 1; i >= 0; i--) {
+  if (lowPlants.some(p => Math.hypot(p.x - grass[i].x, p.z - grass[i].z) < p.size * 0.65)) grass.splice(i, 1);
 }
 
 export function walkable(x: number, z: number): boolean {

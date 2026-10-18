@@ -16,6 +16,9 @@ Distant tufts simplify to one stalk; taller bank reeds carry warm seed heads and
 Small single-species flower patches use white radial daisies, coral cupped poppies, and stacked violet spikes with visible stems and paired leaves.
 Flower heads are projected dot sprites that scale with the camera and share the scene's depth and lighting.
 Grass and flowers sway with the same slow gusts; grass bends near the traveler.
+Sparse ferns and spotted ochre or terracotta mushrooms break up the meadow without filling the walking route.
+Notched lily pads bob within the pond, with broken ripple rings and occasional pale pink blooms.
+Shoreline pebbles use quiet dot and round glyphs; nearby plants mix a few crisp ASCII leaves into the curved Braille silhouettes.
 Stones, paths, rippling water, reflections, and local lights give the scene depth and motion.
 Daylight and lantern toggles expose the lighting system without changing the scene's purpose.
 
@@ -26,6 +29,8 @@ Projection happens onto a grid of two by four Braille dots for each terminal cel
 A software depth buffer resolves overlapping terrain details, vegetation, objects, and the traveler before cell output.
 Each eight-dot Braille mask shares one foreground color; the dots are not independent RGB pixels.
 Ground colors and conventional glyphs sit beneath the Braille detail layer.
+World-anchored ASCII accents share depth ordering with the dot buffer and yield the entire cell whenever a foreground dot overlaps.
+At small projected sizes, plants simplify and lily flowers become single dots instead of oversized glyphs.
 
 ## Layout and interaction
 
