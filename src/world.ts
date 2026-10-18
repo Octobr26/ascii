@@ -36,7 +36,6 @@ export function pathDistance(x: number, z: number): number {
 
 export const rocks: Rock[] = [];
 export const grass: Grass[] = [];
-
 // A stable world: resizing, turning the camera, and animation never regenerate scenery.
 for (let z = -WORLD_EDGE; z < WORLD_EDGE; z += 0.8) {
   for (let x = -WORLD_EDGE; x < WORLD_EDGE; x += 0.8) {
@@ -46,10 +45,15 @@ for (let z = -WORLD_EDGE; z < WORLD_EDGE; z += 0.8) {
     if (bank < 0.22 || pathDistance(px, pz) < 1.05 || Math.hypot(px - CAMP.x, pz - CAMP.z) < 1.6) continue;
     if (noise(px * 0.2, pz * 0.2) < 0.24 || seed < 0.12) continue;
     const reed = bank < 1.5;
-    grass.push({ x: px, z: pz, seed, reed, height: reed ? 0.7 + seed * 0.65 : 0.18 + seed * 0.45, lean: (hash(x, z + 7) - 0.5) * 0.3 });
     if (seed > 0.993 && bank > 2 && Math.hypot(px - SPAWN.x, pz - SPAWN.z) > 3) {
       rocks.push({ x: px, z: pz, radius: 0.35 + hash(z, x) * 0.4, seed });
     }
+    const patch = noise(px * 0.28 + 12, pz * 0.28);
+    if (!reed && (patch < 0.38 || seed < 0.48)) continue;
+    if (reed && seed < 0.35) continue;
+    grass.push({ x: px, z: pz, seed, reed,
+      height: reed ? 0.95 + seed * 0.55 : 0.38 + patch * 0.25 + seed * 0.12,
+      lean: (hash(x, z + 7) - 0.5) * 0.2 });
   }
 }
 

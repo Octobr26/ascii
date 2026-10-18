@@ -217,33 +217,47 @@ export class Scene {
         const shadow = Math.exp(-((x - this.player.x - 0.2) ** 2 / 0.25 + (z - this.player.z - 0.25) ** 2 / 0.12));
         color = mix(color, 0x071015, shadow * 0.75);
         d.bg[i] = mix(color, BACKGROUND, path ? 0.38 : 0.51);
-        d.fg[i] = mix(color, this.night ? 0x72906a : 0x9ba779, 0.16);
+        d.fg[i] = mix(color, d.bg[i], path ? 0.1 : 0.48);
         const grain = hash(Math.floor(x * 7), Math.floor(z * 7));
-        d.glyphs[i] = path ? (grain > 0.7 ? '·' : grain > 0.4 ? '.' : ' ') : ['.', ',', "'", '`', '·'][Math.floor(grain * 5)];
+        d.glyphs[i] = path ? (grain > 0.82 ? '·' : ' ') : grain > 0.93 ? ',' : ' ';
       }
     }
   }
 
   private vegetation() {
     const c = this.camera, d = this.dots!, t = this.time;
-    for (const blade of grass) {
-      const root = c.project(blade.x, 0, blade.z);
+    for (const tuft of grass) {
+      const root = c.project(tuft.x, 0, tuft.z);
       if (!root || root.depth > 80 || root.x < -8 || root.x > d.width + 8 || root.y < -6 || root.y > d.height + 18) continue;
-      const wind = Math.sin(t * 1.9 + blade.x * 0.19 + blade.z * 0.32) * 0.15 + Math.sin(t * 3.4 + blade.seed * 19) * 0.035;
-      const separation = Math.hypot(blade.x - this.player.x, blade.z - this.player.z);
-      const flatten = 1 - clamp(1 - separation / 0.8) * 0.65;
-      const height = blade.height * flatten;
-      const lean = blade.lean + wind;
-      const mid = c.project(blade.x + lean * 0.3, height * 0.55, blade.z);
-      const tip = c.project(blade.x + lean, height, blade.z + wind * 0.2);
-      const base = blade.reed ? mix(0x6e8848, 0xa3a967, blade.seed) : mix(0x39794d, 0x7b9d60, blade.seed);
-      const color = this.shade(base, blade.x, height * 0.5, blade.z, root.depth);
-      d.line(root, mid, mix(color, 0x163a2d, 0.14)); d.line(mid, tip, color);
-      if (blade.reed && blade.seed > 0.45 && tip) {
-        d.line(tip, { ...tip, y: tip.y - 2 }, this.shade(0xb1a777, blade.x, height, blade.z, root.depth));
+      // Shared gusts move a whole patch; small variation keeps neighboring tufts organic.
+      const wind = Math.sin(t * 1.3 + tuft.x * 0.19 + tuft.z * 0.25) * 0.11 + Math.sin(t * 2.1 + tuft.seed * 9) * 0.025;
+      const separation = Math.hypot(tuft.x - this.player.x, tuft.z - this.player.z);
+      const flatten = 1 - clamp(1 - separation / 0.85) * 0.65;
+      const height = tuft.height * flatten;
+      const lean = tuft.lean + wind;
+      const base = tuft.reed ? mix(0x70865a, 0x9aab70, tuft.seed) : mix(0x3e7252, 0x79975c, tuft.seed);
+      const color = this.shade(base, tuft.x, height * 0.5, tuft.z, root.depth);
+      const rootColor = mix(color, this.shade(0x345b40, tuft.x, 0, tuft.z, root.depth), 0.45);
+      const projectedHeight = height * c.focal / root.depth;
+      // Distant plants keep one stalk instead of merging three blades into bright noise.
+      const blades = projectedHeight < 3 ? [0] : [-1, 0, 1];
+      for (const side of blades) {
+        const spread = side * (tuft.reed ? 0.23 : 0.28);
+        const bladeHeight = height * (side === 0 ? 1 : 0.65 + tuft.seed * 0.12);
+        const tipX = tuft.x + lean + c.right.x * spread;
+        const tipZ = tuft.z + wind * 0.25 + c.right.z * spread;
+        const mid = c.project(tuft.x + lean * 0.25 + c.right.x * spread * 0.3, bladeHeight * 0.6,
+          tuft.z + c.right.z * spread * 0.3);
+        const tip = c.project(tipX, bladeHeight, tipZ);
+        d.line(root, mid, rootColor); d.line(mid, tip, color);
+        if (tuft.reed && side === 0 && tuft.seed > 0.55) {
+          // Warm seed heads separate the tall bank reeds from the low meadow grass.
+          d.line(c.project(tipX, bladeHeight * 0.78, tipZ), tip,
+            this.shade(0xc2a175, tipX, bladeHeight, tipZ, root.depth));
+        }
       }
-      if (blade.reed && blade.seed > 0.55) {
-        const reflected = c.project(blade.x + lean, -height * 0.8, blade.z);
+      if (tuft.reed && tuft.seed > 0.55) {
+        const reflected = c.project(tuft.x + lean, -height * 0.8, tuft.z);
         if (reflected) reflected.x += Math.sin(t * 2 + reflected.y * 0.3) * 1.3;
         d.line(root, reflected, mix(color, 0x163d4e, 0.65), true);
       }

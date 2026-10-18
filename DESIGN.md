@@ -11,7 +11,10 @@ The world fills the viewport, while the title, current lighting state, frame rat
 The image is a dense projected glyph landscape rendered as native colored terminal cells.
 The night palette uses cool green and blue terrain, deep navy distance, and amber light from the campfire, lamp posts, and the traveler's lantern.
 The traveler is a pale, readable figure with muted teal clothing and a grounded shadow.
-Grass, reeds, stones, paths, rippling water, reflections, and local lights give the scene depth and motion.
+Grass grows in separated patches of curved three-blade tufts, with darker roots and brighter tips over quiet ground texture.
+Distant tufts simplify to one stalk; taller bank reeds carry warm seed heads and water reflections.
+Grass sways with slow gusts and bends near the traveler.
+Stones, paths, rippling water, reflections, and local lights give the scene depth and motion.
 Daylight and lantern toggles expose the lighting system without changing the scene's purpose.
 
 ## Rendering
@@ -31,5 +34,4 @@ Resize handling updates the framebuffer to keep the world and edge HUD aligned.
 
 ## Verification boundary
 
-The finish review disposition was SHIP with no findings.
 Native-frame preview confirmed the terminal composition, but terminal font metrics, true-color support, and keyboard release behavior can still vary by terminal.
