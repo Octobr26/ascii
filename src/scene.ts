@@ -1,6 +1,6 @@
 import { RGBA, type OptimizedBuffer } from '@opentui/core';
 import { Camera, type Projection } from './camera.ts';
-import { CAMP, POSTS, SPAWN, WORLD_EDGE, clamp, grass, hash, lerp, move, noise, pathDistance, rocks, shore, type Point } from './world.ts';
+import { CAMP, POSTS, SPAWN, WORLD_EDGE, clamp, flowers, grass, hash, lerp, move, noise, pathDistance, rocks, shore, type Point } from './world.ts';
 
 // Experience: a moonlit shore fills the terminal; the controls stay at its edge.
 // World: blue water, dense green glyphs, amber local light, a pale travelling figure.
@@ -28,6 +28,17 @@ const PLAYER = [
   '   bb bb   ',
   '  bbb bbb  ',
 ];
+// Petal silhouettes share the same projected dot/depth buffer as the traveler.
+const FLOWER_HEADS = {
+  daisy: ['   p   ', ' p p p ', '  pop  ', 'ppooopp', '  pop  ', ' p p p ', '   p   '],
+  poppy: [' pp pp ', 'ppppppp', 'ppppppp', ' pdddp ', '  ddd  '],
+  lavender: ['  p  ', ' ppp ', '  d  ', ' ppp ', 'ppppp', '  d  ', ' ppp ', 'ppppp', '  d  '],
+};
+const FLOWER_COLORS = {
+  daisy: { p: 0xf2e8c7, o: 0xe8b84e, d: 0xb5a675 },
+  poppy: { p: 0xee806e, o: 0xe8b84e, d: 0x9d454f },
+  lavender: { p: 0xb5a0df, o: 0xe8b84e, d: 0x7969a4 },
+};
 const SPRITE_COLORS: Record<string, number> = { h: 0xb7baab, H: 0xe3ddbe, f: 0xc9a489, s: 0xb77948, c: 0x55938b, b: 0x434c48 };
 
 function mix(a: number, b: number, k: number): number {
@@ -260,6 +271,44 @@ export class Scene {
         const reflected = c.project(tuft.x + lean, -height * 0.8, tuft.z);
         if (reflected) reflected.x += Math.sin(t * 2 + reflected.y * 0.3) * 1.3;
         d.line(root, reflected, mix(color, 0x163d4e, 0.65), true);
+      }
+    }
+    for (const flower of flowers) {
+      const root = c.project(flower.x, 0, flower.z);
+      if (!root || root.depth > 75 || root.x < -10 || root.x > d.width + 10 || root.y < -8 || root.y > d.height + 32) continue;
+      const sway = Math.sin(t * 1.3 + flower.x * 0.19 + flower.z * 0.25) * 0.08;
+      const x = flower.x + sway, z = flower.z + sway * 0.25;
+      const stem = this.shade(0x679468, x, flower.height * 0.5, z, root.depth);
+      const mid = c.project(flower.x + sway * 0.4, flower.height * 0.45, flower.z);
+      d.line(root, mid, mix(stem, 0x224331, 0.25));
+      d.line(mid, c.project(x, flower.height, z), stem);
+      for (const side of [-1, 1]) {
+        const leaf = c.project(flower.x + c.right.x * side * 0.24, flower.height * (side < 0 ? 0.56 : 0.38),
+          flower.z + c.right.z * side * 0.24);
+        d.line(mid, leaf, stem);
+      }
+      this.sprite(x, flower.height, z, FLOWER_HEADS[flower.kind], FLOWER_COLORS[flower.kind], flower.kind === 'lavender' ? 0.09 : 0.115);
+    }
+  }
+
+  private sprite(x: number, y: number, z: number, pattern: string[], palette: Record<string, number>, pixel: number) {
+    const c = this.camera, d = this.dots!;
+    const top = c.project(x, y + pattern.length * pixel * 0.5, z);
+    const bottom = c.project(x, y - pattern.length * pixel * 0.5, z);
+    if (!top || !bottom) return;
+    const colors = Object.fromEntries(Object.entries(palette).map(([key, value]) =>
+      [key, this.shade(value, x, y, z, (top.depth + bottom.depth) / 2)]));
+    // Rasterize the billboard at its projected size so zooming never leaves holes.
+    for (let sy = Math.max(0, Math.ceil(top.y)); sy <= Math.min(d.height - 1, Math.floor(bottom.y)); sy++) {
+      const v = (sy - top.y) / (bottom.y - top.y);
+      const row = pattern[Math.min(pattern.length - 1, Math.floor(v * pattern.length))];
+      const depth = lerp(top.depth, bottom.depth, v);
+      const center = lerp(top.x, bottom.x, v);
+      const width = row.length * pixel * c.focal / depth;
+      for (let sx = Math.max(0, Math.ceil(center - width / 2)); sx <= Math.min(d.width - 1, Math.floor(center + width / 2)); sx++) {
+        const u = (sx - center + width / 2) / width;
+        const ch = row[Math.min(row.length - 1, Math.floor(u * row.length))];
+        if (ch !== ' ') d.dot({ x: sx, y: sy, depth }, colors[ch]);
       }
     }
   }

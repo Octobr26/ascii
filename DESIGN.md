@@ -13,7 +13,9 @@ The night palette uses cool green and blue terrain, deep navy distance, and ambe
 The traveler is a pale, readable figure with muted teal clothing and a grounded shadow.
 Grass grows in separated patches of curved three-blade tufts, with darker roots and brighter tips over quiet ground texture.
 Distant tufts simplify to one stalk; taller bank reeds carry warm seed heads and water reflections.
-Grass sways with slow gusts and bends near the traveler.
+Small single-species flower patches use white radial daisies, coral cupped poppies, and stacked violet spikes with visible stems and paired leaves.
+Flower heads are projected dot sprites that scale with the camera and share the scene's depth and lighting.
+Grass and flowers sway with the same slow gusts; grass bends near the traveler.
 Stones, paths, rippling water, reflections, and local lights give the scene depth and motion.
 Daylight and lantern toggles expose the lighting system without changing the scene's purpose.
 

@@ -1,6 +1,6 @@
 # ascii
 
-A small OpenTUI scene with an angled, following camera, continuous movement, grass, water, and lighting.
+A small OpenTUI scene with an angled, following camera, continuous movement, grass, wildflowers, water, and lighting.
 The output is real colored terminal text using Unicode Braille dots, not a browser or embedded image.
 
 ## Run
@@ -30,6 +30,10 @@ A larger window and a smaller font give the scene more detail.
 Legacy terminals without key releases use short movement pulses and OS key repeats.
 An initial pause when holding a key is possible in those terminals.
 Water, rocks, lamp posts, the fire pit, and the world edge block movement.
+
+Near the starting path, compare coral poppies on the left, white daisies on the right, and violet flower spikes farther ahead on the right.
+Press **N** for daylight and **+** to inspect the petals and grass tufts more closely.
+The flowers are visual experiments and can be walked through.
 
 ## Development
 

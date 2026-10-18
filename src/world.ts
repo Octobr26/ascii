@@ -1,5 +1,7 @@
 export interface Point { x: number; z: number }
 export interface Grass extends Point { height: number; lean: number; seed: number; reed: boolean }
+export type FlowerKind = 'daisy' | 'poppy' | 'lavender';
+export interface Flower extends Point { kind: FlowerKind; height: number; seed: number }
 export interface Rock extends Point { radius: number; seed: number }
 
 export const WORLD_EDGE = 42;
@@ -36,6 +38,31 @@ export function pathDistance(x: number, z: number): number {
 
 export const rocks: Rock[] = [];
 export const grass: Grass[] = [];
+export const flowers: Flower[] = [];
+
+// Small single-species drifts make each silhouette readable from the path.
+const FLOWER_PATCHES: (Point & { kind: FlowerKind })[] = [
+  { x: -2.1, z: 8, kind: 'daisy' },
+  { x: -8.2, z: 9.5, kind: 'poppy' },
+  { x: -1.9, z: 3, kind: 'lavender' },
+  { x: -12.8, z: -5, kind: 'daisy' },
+  { x: -9.5, z: -16, kind: 'lavender' },
+  { x: -12, z: 18, kind: 'poppy' },
+];
+const FLOWER_HEIGHT = { daisy: 0.88, poppy: 1, lavender: 1.1 };
+for (const patch of FLOWER_PATCHES) {
+  for (let i = 0; i < 6; i++) {
+    const seed = hash(patch.x + i, patch.z);
+    const angle = i * 2.4;
+    const radius = Math.sqrt(i) * 0.78;
+    const x = patch.x + Math.cos(angle) * radius;
+    const z = patch.z + Math.sin(angle) * radius;
+    if (shore(x, z) < 1.8 || pathDistance(x, z) < 1.65 || Math.hypot(x - CAMP.x, z - CAMP.z) < 2) continue;
+    if (POSTS.some(p => Math.hypot(x - p.x, z - p.z) < 0.8)) continue;
+    flowers.push({ x, z, kind: patch.kind, height: FLOWER_HEIGHT[patch.kind] * (0.9 + seed * 0.2), seed });
+  }
+}
+
 // A stable world: resizing, turning the camera, and animation never regenerate scenery.
 for (let z = -WORLD_EDGE; z < WORLD_EDGE; z += 0.8) {
   for (let x = -WORLD_EDGE; x < WORLD_EDGE; x += 0.8) {
@@ -51,10 +78,16 @@ for (let z = -WORLD_EDGE; z < WORLD_EDGE; z += 0.8) {
     const patch = noise(px * 0.28 + 12, pz * 0.28);
     if (!reed && (patch < 0.38 || seed < 0.48)) continue;
     if (reed && seed < 0.35) continue;
+    if (flowers.some(f => Math.hypot(px - f.x, pz - f.z) < 0.6)) continue;
     grass.push({ x: px, z: pz, seed, reed,
       height: reed ? 0.95 + seed * 0.55 : 0.38 + patch * 0.25 + seed * 0.12,
       lean: (hash(x, z + 7) - 0.5) * 0.2 });
   }
+}
+
+// Rocks are generated above; keep flower stems clear of their collision footprints.
+for (let i = flowers.length - 1; i >= 0; i--) {
+  if (!walkable(flowers[i].x, flowers[i].z)) flowers.splice(i, 1);
 }
 
 export function walkable(x: number, z: number): boolean {
