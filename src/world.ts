@@ -1,3 +1,5 @@
+import { lerp } from './math.ts';
+
 export interface Point { x: number; z: number }
 export interface Grass extends Point { height: number; lean: number; seed: number; reed: boolean }
 export type FlowerKind = 'daisy' | 'poppy' | 'lavender';
@@ -10,9 +12,6 @@ export const PLAYER_RADIUS = 0.28;
 export const SPAWN: Point = { x: -5, z: 8 };
 export const CAMP: Point = { x: -9, z: 3 };
 export const POSTS: Point[] = [{ x: -10, z: -12 }, { x: 0, z: 9 }];
-export const clamp = (v: number, lo = 0, hi = 1) => Math.max(lo, Math.min(hi, v));
-export const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
-
 export function hash(x: number, z: number): number {
   const n = Math.sin(x * 127.1 + z * 311.7) * 43758.5453;
   return n - Math.floor(n);

@@ -48,7 +48,10 @@ The build emits `dist/main.js`; run it with `bun dist/main.js` while the project
 
 `src/world.ts` owns terrain, vegetation, and collision.
 `src/camera.ts` owns perspective projection and screen-to-ground mapping.
-`src/scene.ts` owns shading, animation, depth, and character composition.
+`src/scene.ts` owns lighting, animation, and scene composition.
+`src/raster.ts` owns the reusable dot/depth buffer, ASCII accents, and perspective sprite drawing.
+`src/sprites.ts` owns artwork and palettes shared by the drawing routines.
+`src/math.ts` holds calculations shared by world generation and rendering.
 `src/main.ts` owns OpenTUI, input, resizing, and shutdown.
 
 ## Rendering

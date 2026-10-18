@@ -1,6 +1,9 @@
-import { RGBA, type OptimizedBuffer } from '@opentui/core';
-import { Camera, type Projection } from './camera.ts';
-import { CAMP, POSTS, SPAWN, WORLD_EDGE, clamp, ferns, flowers, grass, hash, lerp, lilyPads, move, mushrooms, noise, pathDistance, pebbles, rocks, shore, type Point } from './world.ts';
+import type { OptimizedBuffer } from '@opentui/core';
+import { Camera } from './camera.ts';
+import { DotBuffer } from './raster.ts';
+import { clamp, lerp } from './math.ts';
+import { PLAYER, SPRITE_COLORS, FLOWER_SPRITES, MUSHROOM_SPRITES, type SpriteArt } from './sprites.ts';
+import { CAMP, POSTS, SPAWN, WORLD_EDGE, ferns, flowers, grass, hash, lilyPads, move, mushrooms, noise, pathDistance, pebbles, rocks, shore, type Point } from './world.ts';
 
 // Experience: a moonlit shore fills the terminal; the controls stay at its edge.
 // World: blue water, dense green glyphs, amber local light, a pale travelling figure.
@@ -8,39 +11,10 @@ import { CAMP, POSTS, SPAWN, WORLD_EDGE, clamp, ferns, flowers, grass, hash, ler
 // Finish: inspect actual terminal output, input, resizing, and shutdown before delivery.
 
 const BACKGROUND = 0x080f16;
-const DOT_BITS = [[1, 8], [2, 16], [4, 32], [64, 128]];
-const BRAILLE = Array.from({ length: 256 }, (_, i) => String.fromCharCode(0x2800 + i));
-const PLAYER = [
-  '    hhh    ',
-  '   hHHHh   ',
-  '   hfffh   ',
-  '   hfffh   ',
-  '    sss    ',
-  '   ccscc   ',
-  '  ccccccc  ',
-  ' ccccccccc ',
-  ' ccccccccc ',
-  '  ccccccc  ',
-  '  ccccccc  ',
-  '  ccccccc  ',
-  '   ccccc   ',
-  '   bb bb   ',
-  '   bb bb   ',
-  '  bbb bbb  ',
-];
-// Petal silhouettes share the same projected dot/depth buffer as the traveler.
-const FLOWER_HEADS = {
-  daisy: ['   p   ', ' p p p ', '  pop  ', 'ppooopp', '  pop  ', ' p p p ', '   p   '],
-  poppy: [' pp pp ', 'ppppppp', 'ppppppp', ' pdddp ', '  ddd  '],
-  lavender: ['  p  ', ' ppp ', '  d  ', ' ppp ', 'ppppp', '  d  ', ' ppp ', 'ppppp', '  d  '],
-};
-const MUSHROOM = ['   ccc   ', '  cpccc  ', ' ccccpcc ', 'ccccccccc', '  ggggg  ', '   sss   ', '   sss   ', '   sss   '];
-const FLOWER_COLORS = {
-  daisy: { p: 0xf2e8c7, o: 0xe8b84e, d: 0xb5a675 },
-  poppy: { p: 0xee806e, o: 0xe8b84e, d: 0x9d454f },
-  lavender: { p: 0xb5a0df, o: 0xe8b84e, d: 0x7969a4 },
-};
-const SPRITE_COLORS: Record<string, number> = { h: 0xb7baab, H: 0xe3ddbe, f: 0xc9a489, s: 0xb77948, c: 0x55938b, b: 0x434c48 };
+const SINGLE_BLADE = [0] as const;
+const TUFT_BLADES = [-1, 0, 1] as const;
+const LEAF_SIDES = [-1, 1] as const;
+const FERN_FRONDS = [-1, -0.5, 0, 0.5, 1] as const;
 
 function mix(a: number, b: number, k: number): number {
   k = clamp(k);
@@ -49,104 +23,7 @@ function mix(a: number, b: number, k: number): number {
     Math.round(lerp(a & 255, b & 255, k));
 }
 
-const colorCache = new Map<number, RGBA>();
-function rgba(rgb: number): RGBA {
-  // Quantization bounds the native color cache during continuous lighting changes.
-  const key = rgb & 0xfcfcfc;
-  let out = colorCache.get(key);
-  if (!out) {
-    out = RGBA.fromInts(key >> 16, (key >> 8) & 255, key & 255);
-    colorCache.set(key, out);
-  }
-  return out;
-}
-
 interface Light extends Point { y: number; radius: number; strength: number; color: number }
-
-/** A small software depth buffer. Each eight-dot mask becomes one real terminal glyph. */
-class Dots {
-  readonly width: number;
-  readonly height: number;
-  readonly depth: Float32Array;
-  readonly colors: Int32Array;
-  readonly wet: Uint8Array;
-  readonly bg: Int32Array;
-  readonly fg: Int32Array;
-  readonly glyphs: string[];
-  readonly accents: (string | undefined)[];
-  readonly accentDepth: Float32Array;
-  readonly accentColors: Int32Array;
-
-  constructor(readonly cols: number, readonly rows: number) {
-    this.width = cols * 2;
-    this.height = rows * 4;
-    this.depth = new Float32Array(this.width * this.height);
-    this.colors = new Int32Array(this.width * this.height);
-    this.wet = new Uint8Array(cols * rows);
-    this.bg = new Int32Array(cols * rows);
-    this.fg = new Int32Array(cols * rows);
-    this.glyphs = new Array(cols * rows);
-    this.accents = new Array(cols * rows);
-    this.accentDepth = new Float32Array(cols * rows);
-    this.accentColors = new Int32Array(cols * rows);
-  }
-
-  clear() {
-    this.depth.fill(Infinity); this.colors.fill(-1);
-    this.accents.fill(undefined); this.accentDepth.fill(Infinity);
-  }
-
-  accent(p: Projection | null, glyph: string, color: number) {
-    if (!p) return;
-    const x = Math.floor(p.x / 2), y = Math.floor(p.y / 4);
-    if (x < 0 || y < 0 || x >= this.cols || y >= this.rows) return;
-    const i = y * this.cols + x;
-    if (p.depth > this.accentDepth[i]) return;
-    this.accents[i] = glyph; this.accentDepth[i] = p.depth; this.accentColors[i] = color;
-  }
-
-  dot(p: Projection | null, color: number, reflection = false) {
-    if (!p) return;
-    const x = Math.round(p.x), y = Math.round(p.y);
-    if (x < 0 || y < 0 || x >= this.width || y >= this.height) return;
-    if (reflection && !this.wet[(y >> 2) * this.cols + (x >> 1)]) return;
-    const i = y * this.width + x;
-    if (p.depth > this.depth[i]) return;
-    this.depth[i] = p.depth;
-    this.colors[i] = color;
-  }
-
-  line(a: Projection | null, b: Projection | null, color: number, reflection = false) {
-    if (!a || !b) return;
-    if (Math.max(a.x, b.x) < 0 || Math.min(a.x, b.x) >= this.width || Math.max(a.y, b.y) < 0 || Math.min(a.y, b.y) >= this.height) return;
-    const steps = Math.min(60, Math.ceil(Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y))));
-    for (let i = 0; i <= steps; i++) {
-      const k = steps ? i / steps : 0;
-      this.dot({ x: lerp(a.x, b.x, k), y: lerp(a.y, b.y, k), depth: lerp(a.depth, b.depth, k) }, color, reflection);
-    }
-  }
-
-  flush(buffer: OptimizedBuffer) {
-    for (let y = 0; y < this.rows; y++) for (let x = 0; x < this.cols; x++) {
-      let bits = 0, r = 0, g = 0, b = 0, count = 0, nearest = Infinity;
-      for (let dy = 0; dy < 4; dy++) for (let dx = 0; dx < 2; dx++) {
-        const color = this.colors[(y * 4 + dy) * this.width + x * 2 + dx];
-        if (color < 0) continue;
-        nearest = Math.min(nearest, this.depth[(y * 4 + dy) * this.width + x * 2 + dx]);
-        bits |= DOT_BITS[dy][dx];
-        r += color >> 16; g += (color >> 8) & 255; b += color & 255; count++;
-      }
-      const i = y * this.cols + x;
-      // A whole-cell accent yields to any foreground dot, including the traveler.
-      if (this.accents[i] && this.accentDepth[i] <= nearest) {
-        buffer.setCell(x, y, this.accents[i]!, rgba(this.accentColors[i]), rgba(this.bg[i]));
-        continue;
-      }
-      const color = count ? (Math.round(r / count) << 16) | (Math.round(g / count) << 8) | Math.round(b / count) : this.fg[i];
-      buffer.setCell(x, y, bits ? BRAILLE[bits] : this.glyphs[i], rgba(color), rgba(this.bg[i]));
-    }
-  }
-}
 
 export class Scene {
   player: Point = { ...SPAWN };
@@ -159,7 +36,7 @@ export class Scene {
   distance = 0;
   moving = false;
   private lightSources: Light[] = [];
-  private dots: Dots | null = null;
+  private dots: DotBuffer | null = null;
   private camera!: Camera;
 
   update(dt: number, horizontal: number, vertical: number, turn: number, sprint: boolean) {
@@ -281,7 +158,7 @@ export class Scene {
         continue;
       }
       // Distant plants keep one stalk instead of merging three blades into bright noise.
-      const blades = projectedHeight < 3 ? [0] : [-1, 0, 1];
+      const blades = projectedHeight < 3 ? SINGLE_BLADE : TUFT_BLADES;
       for (const side of blades) {
         const spread = side * (tuft.reed ? 0.23 : 0.28);
         const bladeHeight = height * (side === 0 ? 1 : 0.65 + tuft.seed * 0.12);
@@ -312,35 +189,21 @@ export class Scene {
       const mid = c.project(flower.x + sway * 0.4, flower.height * 0.45, flower.z);
       d.line(root, mid, mix(stem, 0x224331, 0.25));
       d.line(mid, c.project(x, flower.height, z), stem);
-      for (const side of [-1, 1]) {
+      for (const side of LEAF_SIDES) {
         const leaf = c.project(flower.x + c.right.x * side * 0.24, flower.height * (side < 0 ? 0.56 : 0.38),
           flower.z + c.right.z * side * 0.24);
         d.line(mid, leaf, stem);
       }
-      this.sprite(x, flower.height, z, FLOWER_HEADS[flower.kind], FLOWER_COLORS[flower.kind], flower.kind === 'lavender' ? 0.09 : 0.115);
+      this.sprite(x, flower.height, z, FLOWER_SPRITES[flower.kind]);
     }
   }
 
-  private sprite(x: number, y: number, z: number, pattern: string[], palette: Record<string, number>, pixel: number) {
-    const c = this.camera, d = this.dots!;
-    const top = c.project(x, y + pattern.length * pixel * 0.5, z);
-    const bottom = c.project(x, y - pattern.length * pixel * 0.5, z);
-    if (!top || !bottom) return;
-    const colors = Object.fromEntries(Object.entries(palette).map(([key, value]) =>
-      [key, this.shade(value, x, y, z, (top.depth + bottom.depth) / 2)]));
-    // Rasterize the billboard at its projected size so zooming never leaves holes.
-    for (let sy = Math.max(0, Math.ceil(top.y)); sy <= Math.min(d.height - 1, Math.floor(bottom.y)); sy++) {
-      const v = (sy - top.y) / (bottom.y - top.y);
-      const row = pattern[Math.min(pattern.length - 1, Math.floor(v * pattern.length))];
-      const depth = lerp(top.depth, bottom.depth, v);
-      const center = lerp(top.x, bottom.x, v);
-      const width = row.length * pixel * c.focal / depth;
-      for (let sx = Math.max(0, Math.ceil(center - width / 2)); sx <= Math.min(d.width - 1, Math.floor(center + width / 2)); sx++) {
-        const u = (sx - center + width / 2) / width;
-        const ch = row[Math.min(row.length - 1, Math.floor(u * row.length))];
-        if (ch !== ' ') d.dot({ x: sx, y: sy, depth }, colors[ch]);
-      }
-    }
+  private sprite(x: number, y: number, z: number, art: SpriteArt, scale = 1) {
+    const at = this.camera.project(x, y, z);
+    if (!at) return;
+    const colors = Object.fromEntries(Object.entries(art.palette).map(([key, value]) =>
+      [key, this.shade(value, x, y, z, at.depth)]));
+    this.dots!.sprite(this.camera, x, y, z, art.rows, colors, art.pixelSize * scale);
   }
 
   private details() {
@@ -387,7 +250,7 @@ export class Scene {
       if (!root || root.depth > 60 || root.x < -20 || root.x > d.width + 20 || root.y < -10 || root.y > d.height + 30) continue;
       const sway = Math.sin(t * 1.3 + fern.x * 0.19 + fern.z * 0.25) * 0.08;
       const ink = this.shade(0x74a477, fern.x, 0.4, fern.z, root.depth);
-      for (const side of [-1, -0.5, 0, 0.5, 1]) {
+      for (const side of FERN_FRONDS) {
         const at = (k: number) => c.project(fern.x + c.right.x * (side * k * fern.size + sway * k),
           Math.sin(k * 2.3) * fern.size * (0.85 - Math.abs(side) * 0.25),
           fern.z + c.right.z * side * k * fern.size);
@@ -396,7 +259,7 @@ export class Scene {
           d.line(at((i - 1) / 6), p, ink);
           if (!p || i === 6) continue;
           const width = Math.sin(k * Math.PI) * fern.size * c.focal / p.depth * 0.17;
-          for (const leaf of [-1, 1]) {
+          for (const leaf of LEAF_SIDES) {
             const tip = { ...p, x: p.x + leaf * width, y: p.y - width * 0.55, depth: p.depth - 0.01 };
             d.line(p, tip, ink);
             if (i === 3 && Math.abs(side) >= 0.5 && width > 1.4) {
@@ -410,8 +273,8 @@ export class Scene {
       const { x, z, size } = mushroom;
       const root = c.project(x, 0, z);
       if (!root || root.depth > 65 || root.x < -12 || root.x > d.width + 12 || root.y < -8 || root.y > d.height + 20) continue;
-      const cap = mushroom.seed < 0.65 ? 0xc17a58 : 0xc1a065;
-      this.sprite(x, 0.39 * size, z, MUSHROOM, { c: cap, p: 0xe6cd9e, g: 0x846547, s: 0xc7bc91 }, 0.095 * size);
+      const art = mushroom.seed < 0.65 ? MUSHROOM_SPRITES.terracotta : MUSHROOM_SPRITES.ochre;
+      this.sprite(x, 0.39 * size, z, art, size);
       if (size * c.focal / root.depth > 6) {
         d.accent(c.project(x, 0.26 * size, z), '|', this.shade(0xc7bc91, x, 0.26 * size, z, root.depth));
       }
@@ -478,7 +341,7 @@ export class Scene {
   }
 
   paint(buffer: OptimizedBuffer, cols: number, rows: number) {
-    if (!this.dots || this.dots.cols !== cols || this.dots.rows !== rows) this.dots = new Dots(cols, rows);
+    if (!this.dots || this.dots.cols !== cols || this.dots.rows !== rows) this.dots = new DotBuffer(cols, rows);
     this.camera = new Camera(cols, rows, this.focus, this.yaw, this.zoom);
     this.dots.clear(); this.lights(); this.ground(); this.vegetation(); this.details();
     for (const rock of rocks) this.stone(rock.x, rock.z, rock.radius, rock.seed);

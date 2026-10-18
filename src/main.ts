@@ -1,6 +1,6 @@
 import { FrameBufferRenderable, RGBA, createCliRenderer, type KeyEvent } from '@opentui/core';
 import { Scene } from './scene.ts';
-import { clamp } from './world.ts';
+import { clamp } from './math.ts';
 
 if (!process.stdin.isTTY || !process.stdout.isTTY) {
   console.error('Run bun start inside an interactive terminal.');
